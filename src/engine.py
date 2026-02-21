@@ -22,7 +22,9 @@ class Item:
             if not re.fullmatch(NAMING_PATTERN, path.stem):
                 time = get_media_date(path)
                 self.proposed_name = (
-                    f"{time.strftime('%Y%m%d-%H%M%S')}_{generate_random_string(4)}{path.suffix.lower()}"
+                    (f"{time.strftime('%Y%m%d-%H%M%S')}_{generate_random_string(4)}{path.suffix.lower()}")
+                    if time
+                    else self.name
                 )
 
     def rename(self):
