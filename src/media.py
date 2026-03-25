@@ -1,8 +1,10 @@
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from hachoir.metadata import extractMetadata
+from hachoir.parser import createParser
 from PIL import Image
-from win32com.propsys import propsys, pscon  # type: ignore
 
 from patterns import Pattern
 
@@ -12,8 +14,17 @@ NAMING_PATTERNS: list[Pattern] = []
 
 
 def get_earliest_date(path: Path):
-    date_created = datetime.fromtimestamp(path.stat().st_birthtime)
-    date_modified = datetime.fromtimestamp(path.stat().st_mtime)
+    stat = path.stat()
+    date_modified = datetime.fromtimestamp(stat.st_mtime)
+
+    # st_birthtime is only available on Windows and macOS; Linux exposes st_ctime
+    # (inode change time) instead, which is not the true creation time, so we
+    # treat it as a candidate alongside the modification time and pick the earliest.
+    if sys.platform == "win32" or hasattr(stat, "st_birthtime"):
+        date_created = datetime.fromtimestamp(stat.st_birthtime)  # type: ignore
+    else:
+        date_created = datetime.fromtimestamp(stat.st_ctime)
+
     return date_created if date_created.timestamp() < date_modified.timestamp() else date_modified
 
 
@@ -33,10 +44,24 @@ def get_picture_date(path: Path):
 
 def get_video_date(path: Path):
     try:
-        properties = propsys.SHGetPropertyStoreFromParsingName(str(path))
-        media_date = properties.GetValue(pscon.PKEY_Media_DateEncoded).GetValue()
-        if not isinstance(media_date, datetime):
-            media_date = datetime.fromtimestamp(int(media_date))
+        parser = createParser(str(path))
+        if not parser:
+            return get_picture_date(path)
+        with parser:
+            metadata = extractMetadata(parser)
+        if not metadata:
+            return get_picture_date(path)
+
+        # Prefer the creation date embedded in the container (e.g. QuickTime/MP4
+        # "mvhd" box) over the modification date.
+        media_date: datetime | None = metadata.get("creation_date")
+        if not media_date:
+            media_date = metadata.get("last_modification")
+        if not media_date:
+            return get_picture_date(path)
+
+        # hachoir returns naive datetimes in UTC for container timestamps.
+        if media_date.tzinfo is None:
             media_date = media_date.replace(tzinfo=timezone.utc)
         return media_date.astimezone()
     except Exception:
@@ -47,6 +72,6 @@ def get_media_date(path: Path):
     for pattern in NAMING_PATTERNS:
         if pattern.check_pattern(path):
             return pattern.get_date(path)
-    if path.suffix in VIDEO_EXTENSIONS:
+    if path.suffix.lower() in VIDEO_EXTENSIONS:
         return get_video_date(path)
     return get_picture_date(path)
