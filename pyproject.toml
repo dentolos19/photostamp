@@ -2,4 +2,4 @@
 name = "namestamp"
 version = "1.0.0"
 requires-python = ">=3.13"
-dependencies = ["colorama", "hachoir", "pillow", "pyinstaller"]
+dependencies = ["colorama", "hachoir", "pillow"]

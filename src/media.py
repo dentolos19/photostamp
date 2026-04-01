@@ -11,6 +11,17 @@ from patterns import Pattern
 VIDEO_EXTENSIONS: list[str] = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm"]
 NAMING_PATTERNS: list[Pattern] = []
 # NAMING_PATTERNS: list[Pattern] = [ScreenshotsPattern(), WhatsAppPattern()]
+MIN_VALID_YEAR = 1970
+MIN_VALID_DATE = datetime(MIN_VALID_YEAR, 1, 1)
+
+
+def is_valid_media_date(date_value: datetime):
+    try:
+        if int(date_value.timestamp()) <= 31536000:
+            return False
+    except (OverflowError, OSError, ValueError):
+        return False
+    return date_value.year > MIN_VALID_YEAR
 
 
 def get_earliest_date(path: Path):
@@ -25,7 +36,14 @@ def get_earliest_date(path: Path):
     else:
         date_created = datetime.fromtimestamp(stat.st_ctime)
 
-    return date_created if date_created.timestamp() < date_modified.timestamp() else date_modified
+    candidate_dates = sorted((date_created, date_modified), key=lambda date: date.timestamp())
+
+    for candidate_date in candidate_dates:
+        # Skip unset timestamps and dates older than the minimum supported year.
+        if is_valid_media_date(candidate_date):
+            return candidate_date
+
+    return MIN_VALID_DATE
 
 
 def get_picture_date(path: Path):
@@ -36,7 +54,7 @@ def get_picture_date(path: Path):
         date_taken = datetime.strptime(exif[36867], "%Y:%m:%d %H:%M:%S")
     except Exception:
         date_taken = None
-    if date_taken:
+    if date_taken and is_valid_media_date(date_taken):
         return date_taken
     else:
         return get_earliest_date(path)
@@ -63,7 +81,10 @@ def get_video_date(path: Path):
         # hachoir returns naive datetimes in UTC for container timestamps.
         if media_date.tzinfo is None:
             media_date = media_date.replace(tzinfo=timezone.utc)
-        return media_date.astimezone()
+        media_date = media_date.astimezone()
+        if is_valid_media_date(media_date):
+            return media_date
+        return get_picture_date(path)
     except Exception:
         return get_picture_date(path)
 
