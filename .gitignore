@@ -1,13 +1,16 @@
 # Editor configurations
 .vs/
 .idea/
+*.iml
 
 # Environment files
+.pytest_cache/
+.ruff_cache/
 .venv/
+*.egg-info/
 __pycache__/
 build/
 dist/
-*.spec
 
 # User files
 .env*

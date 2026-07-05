@@ -3,6 +3,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+NAMING_PATTERN = r"(?P<date>\d{8})-(?P<time>\d{6})_[a-zA-Z0-9]{4}"
+
+
+def parse_date(path: Path):
+    match = re.fullmatch(NAMING_PATTERN, path.stem)
+    if match is None:
+        return None
+    try:
+        return datetime.strptime(match.group("date") + match.group("time"), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
 
 class Pattern:
     def check_pattern(self, path: Path) -> bool:
