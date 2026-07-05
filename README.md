@@ -1,4 +1,4 @@
-# Namestamp
+# Photostamp
 
 A simple tool for easily stamping your pictures and videos according to their dates!
 
