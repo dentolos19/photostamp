@@ -6,10 +6,10 @@ from pathlib import Path
 from media import (
     can_write_metadata,
     get_media_date,
-    get_media_metadata_date,
+    get_metadata_date,
     is_supported_media,
     write_metadata_date,
-    write_metadata_date_from_name,
+    write_named_date,
 )
 from patterns import is_photostamp_name, parse_date
 from utils import generate_random_string
@@ -67,7 +67,7 @@ def set_linked_name(
         item.proposed_name = name
 
 
-def symlink_target_for_path(current_symlink_path: Path, new_symlink_path: Path, target_path: Path):
+def get_symlink_target(current_symlink_path: Path, new_symlink_path: Path, target_path: Path):
     current_target = os.readlink(current_symlink_path)
     if Path(current_target).is_absolute():
         return target_path
@@ -122,7 +122,7 @@ class Item:
             if not self.is_supported_media:
                 return
 
-            metadata_date = get_media_metadata_date(path)
+            metadata_date = get_metadata_date(path)
             media_date = get_media_date(path)
             if not media_date:
                 return
@@ -185,7 +185,7 @@ class Item:
         linked_target = self.linked_target_paths.get(self.linked_path)
         if linked_target is None:
             linked_target = self.linked_path.with_name(self.proposed_name)
-        symlink_target = symlink_target_for_path(self.path, target, linked_target)
+        symlink_target = get_symlink_target(self.path, target, linked_target)
 
         self.path.unlink()
         target.symlink_to(symlink_target)
@@ -193,10 +193,10 @@ class Item:
         self.name = self.path.name
         return True
 
-    def write_metadata_from_name(self):
+    def write_named_metadata(self):
         if self.is_dir or self.filename_date is None:
             return False
-        return write_metadata_date_from_name(self.path)
+        return write_named_date(self.path)
 
     def write_metadata(self):
         if self.is_dir or self.metadata_date_to_write is None:

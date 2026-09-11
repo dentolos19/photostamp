@@ -1,6 +1,6 @@
 # Photostamp
 
-A simple tool for easily stamping your pictures and videos according to their dates!
+A command-line tool that stamps pictures and videos according to their dates.
 
 ## License
 

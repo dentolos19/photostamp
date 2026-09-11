@@ -5,7 +5,7 @@ requires-python = ">=3.13"
 dependencies = ["colorama", "hachoir", "piexif>=1.1.3", "pillow"]
 
 [dependency-groups]
-dev = ["ruff"]
+dev = ["ruff", "ty"]
 
 [tool.ruff]
 line-length = 120

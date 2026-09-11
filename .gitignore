@@ -3,7 +3,7 @@
 .idea/
 *.iml
 
-# Environment files
+# Build files
 .pytest_cache/
 .ruff_cache/
 .venv/
@@ -17,6 +17,7 @@ dist/
 !.env*.template
 
 # Miscellaneous files
+.tmp/
 .DS_Store
 Desktop.ini
 Thumbs.db

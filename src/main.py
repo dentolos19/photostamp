@@ -96,7 +96,7 @@ def process_metadata(items: list[Item], count: int = 0, indent: int = 0, apply: 
         else:
             print(f"{Fore.YELLOW}{item.name}{Fore.RESET} -> {Fore.GREEN}metadata date{Fore.RESET}")
             if apply:
-                item.write_metadata_from_name()
+                item.write_named_metadata()
     return count
 
 

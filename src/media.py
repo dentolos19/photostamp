@@ -14,10 +14,10 @@ from PIL import Image
 
 from patterns import parse_date
 
-IMAGE_EXTENSIONS: list[str] = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"]
-JPEG_EXTENSIONS: list[str] = [".jpg", ".jpeg"]
-VIDEO_EXTENSIONS: list[str] = [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm"]
-WRITABLE_IMAGE_METADATA_EXTENSIONS: list[str] = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"]
+IMAGE_EXTENSIONS: list[str] = [".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]
+JPEG_EXTENSIONS: list[str] = [".jpeg", ".jpg"]
+VIDEO_EXTENSIONS: list[str] = [".avi", ".flv", ".mkv", ".mov", ".mp4", ".webm", ".wmv"]
+WRITABLE_IMAGE_METADATA_EXTENSIONS: list[str] = [".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]
 MIN_VALID_YEAR = 1970
 MIN_VALID_DATE = datetime(MIN_VALID_YEAR, 1, 1)
 EXIF_IFD_TAG = 0x8769
@@ -26,7 +26,7 @@ EXIF_DATETIME_ORIGINAL_TAG = 0x9003
 EXIF_DATETIME_DIGITIZED_TAG = 0x9004
 
 warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
-hachoir_config.quiet = True
+setattr(hachoir_config, "quiet", True)
 
 
 def is_supported_media(path: Path):
@@ -57,8 +57,9 @@ def get_earliest_date(path: Path):
     # st_birthtime is only available on Windows and macOS; Linux exposes st_ctime
     # (inode change time) instead, which is not the true creation time, so we
     # treat it as a candidate alongside the modification time and pick the earliest.
-    if sys.platform == "win32" or hasattr(stat, "st_birthtime"):
-        date_created = datetime.fromtimestamp(stat.st_birthtime)  # type: ignore
+    birthtime = getattr(stat, "st_birthtime", None)
+    if sys.platform == "win32" or birthtime is not None:
+        date_created = datetime.fromtimestamp(birthtime)
     else:
         date_created = datetime.fromtimestamp(stat.st_ctime)
 
@@ -72,7 +73,7 @@ def get_earliest_date(path: Path):
     return MIN_VALID_DATE
 
 
-def get_picture_metadata_date(path: Path):
+def get_image_date(path: Path):
     date_taken = None
     try:
         with Image.open(path) as image:
@@ -94,7 +95,7 @@ def get_picture_metadata_date(path: Path):
     return None
 
 
-def get_video_metadata_date(path: Path):
+def get_video_date(path: Path):
     try:
         parser = createParser(str(path))
         if not parser:
@@ -123,14 +124,14 @@ def get_video_metadata_date(path: Path):
         return None
 
 
-def get_media_metadata_date(path: Path):
+def get_metadata_date(path: Path):
     if path.suffix.lower() in VIDEO_EXTENSIONS:
-        return get_video_metadata_date(path)
-    return get_picture_metadata_date(path)
+        return get_video_date(path)
+    return get_image_date(path)
 
 
 def get_media_date(path: Path):
-    metadata_date = get_media_metadata_date(path)
+    metadata_date = get_metadata_date(path)
     if metadata_date:
         return metadata_date
     filename_date = parse_date(path)
@@ -139,7 +140,7 @@ def get_media_date(path: Path):
     return get_earliest_date(path)
 
 
-def write_image_metadata_date(path: Path, date_taken: datetime):
+def write_image_date(path: Path, date_taken: datetime):
     exif_date = date_taken.strftime("%Y:%m:%d %H:%M:%S")
 
     if path.suffix.lower() in JPEG_EXTENSIONS:
@@ -161,7 +162,7 @@ def write_image_metadata_date(path: Path, date_taken: datetime):
         image.save(path, exif=exif)
 
 
-def write_video_metadata_date(path: Path, date_taken: datetime):
+def write_video_date(path: Path, date_taken: datetime):
     with NamedTemporaryFile(
         dir=path.parent, prefix=f".{path.stem}-", suffix=path.suffix, delete=False
     ) as temporary_file:
@@ -203,14 +204,14 @@ def write_metadata_date(path: Path, date_taken: datetime):
         raise ValueError(f"Cannot write metadata for unsupported file type: {path}")
 
     if path.suffix.lower() in VIDEO_EXTENSIONS:
-        write_video_metadata_date(path, date_taken)
+        write_video_date(path, date_taken)
     else:
-        write_image_metadata_date(path, date_taken)
+        write_image_date(path, date_taken)
 
     return True
 
 
-def write_metadata_date_from_name(path: Path):
+def write_named_date(path: Path):
     date_taken = parse_date(path)
     if date_taken is None:
         return False
