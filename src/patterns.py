@@ -21,7 +21,7 @@ class Pattern:
 
         try:
             value = "".join(match.group(group) for group in self.date_groups)
-            return datetime.strptime(value, self.date_format)
+            return datetime.strptime(value, self.date_format).astimezone()
         except ValueError:
             return None
 

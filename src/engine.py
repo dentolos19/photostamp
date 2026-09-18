@@ -30,17 +30,23 @@ def add_date_offset(date_value, offset: tuple[int, int, int, int, int] | None):
     adjusted_year, adjusted_month_index = divmod(month_index, 12)
     adjusted_month = adjusted_month_index + 1
     if not 1 <= adjusted_year <= 9999:
-        raise ValueError(f"Date offset moves {date_value:%Y-%m-%d %H:%M:%S} outside the supported year range")
+        raise ValueError(
+            f"Date offset moves {date_value:%Y-%m-%d %H:%M:%S} outside the supported year range"
+        )
 
     adjusted_day = min(date_value.day, monthrange(adjusted_year, adjusted_month)[1])
     try:
-        return date_value.replace(year=adjusted_year, month=adjusted_month, day=adjusted_day) + timedelta(
+        return date_value.replace(
+            year=adjusted_year, month=adjusted_month, day=adjusted_day
+        ) + timedelta(
             days=days,
             hours=hours,
             minutes=minutes,
         )
     except (OverflowError, ValueError) as error:
-        raise ValueError(f"Cannot apply date offset to {date_value:%Y-%m-%d %H:%M:%S}") from error
+        raise ValueError(
+            f"Cannot apply date offset to {date_value:%Y-%m-%d %H:%M:%S}"
+        ) from error
 
 
 def generate_media_name(path: Path, reserved_names: set[str], media_date):
@@ -67,7 +73,9 @@ def set_linked_name(
         item.proposed_name = name
 
 
-def get_symlink_target(current_symlink_path: Path, new_symlink_path: Path, target_path: Path):
+def get_symlink_target(
+    current_symlink_path: Path, new_symlink_path: Path, target_path: Path
+):
     current_target = os.readlink(current_symlink_path)
     if Path(current_target).is_absolute():
         return target_path
@@ -132,12 +140,16 @@ class Item:
                 self.metadata_date_to_write = self.adjusted_metadata_date
             elif self.filename_date is not None and metadata_date is None:
                 self.metadata_date_to_write = self.filename_date
-            self.should_write_metadata = self.metadata_date_to_write is not None and self.can_write_metadata
+            self.should_write_metadata = (
+                self.metadata_date_to_write is not None and self.can_write_metadata
+            )
 
             linked_path = path.resolve()
             self.linked_path = linked_path
             linked_items.setdefault(linked_path, []).append(self)
-            has_current_name = is_photostamp_name(path) and dates_match(media_date, self.filename_date)
+            has_current_name = is_photostamp_name(path) and dates_match(
+                media_date, self.filename_date
+            )
             has_normalized_suffix = path.suffix == path.suffix.lower()
             if has_current_name and has_normalized_suffix:
                 set_linked_name(linked_path, self.name, linked_names, linked_items)
@@ -170,7 +182,9 @@ class Item:
                     return False
             except FileNotFoundError:
                 return False
-            raise FileExistsError(f"Cannot rename {self.path} because {target} already exists")
+            raise FileExistsError(
+                f"Cannot rename {self.path} because {target} already exists"
+            )
         self.path = self.path.rename(target)
         self.name = self.path.name
         return True
@@ -180,7 +194,9 @@ class Item:
             return False
         target = self.path.with_name(self.proposed_name)
         if os.path.lexists(target) and target != self.path:
-            raise FileExistsError(f"Cannot rename {self.path} because {target} already exists")
+            raise FileExistsError(
+                f"Cannot rename {self.path} because {target} already exists"
+            )
 
         linked_target = self.linked_target_paths.get(self.linked_path)
         if linked_target is None:
