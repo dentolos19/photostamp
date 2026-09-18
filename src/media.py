@@ -1,6 +1,7 @@
+import logging
 import sys
 import warnings
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from shutil import which
 from subprocess import CalledProcessError, run
@@ -14,19 +15,21 @@ from PIL import Image
 
 from patterns import parse_date
 
+logger = logging.getLogger(__name__)
+
 IMAGE_EXTENSIONS: list[str] = [".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]
 JPEG_EXTENSIONS: list[str] = [".jpeg", ".jpg"]
 VIDEO_EXTENSIONS: list[str] = [".avi", ".flv", ".mkv", ".mov", ".mp4", ".webm", ".wmv"]
 WRITABLE_IMAGE_METADATA_EXTENSIONS: list[str] = [".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"]
 MIN_VALID_YEAR = 1970
-MIN_VALID_DATE = datetime(MIN_VALID_YEAR, 1, 1)
+MIN_VALID_DATE = datetime(MIN_VALID_YEAR, 1, 1).astimezone()
 EXIF_IFD_TAG = 0x8769
 EXIF_DATETIME_TAG = 0x0132
 EXIF_DATETIME_ORIGINAL_TAG = 0x9003
 EXIF_DATETIME_DIGITIZED_TAG = 0x9004
 
 warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
-setattr(hachoir_config, "quiet", True)
+hachoir_config.quiet = True  # ty: ignore[invalid-assignment] - Hachoir exposes a mutable runtime flag.
 
 
 def is_supported_media(path: Path):
@@ -52,16 +55,16 @@ def get_earliest_date(path: Path):
         stat = path.stat()
     except FileNotFoundError:
         return None
-    date_modified = datetime.fromtimestamp(stat.st_mtime)
+    date_modified = datetime.fromtimestamp(stat.st_mtime, tz=UTC).astimezone()
 
     # st_birthtime is only available on Windows and macOS; Linux exposes st_ctime
     # (inode change time) instead, which is not the true creation time, so we
     # treat it as a candidate alongside the modification time and pick the earliest.
     birthtime = getattr(stat, "st_birthtime", None)
     if sys.platform == "win32" or birthtime is not None:
-        date_created = datetime.fromtimestamp(birthtime)
+        date_created = datetime.fromtimestamp(birthtime, tz=UTC).astimezone()
     else:
-        date_created = datetime.fromtimestamp(stat.st_ctime)
+        date_created = datetime.fromtimestamp(stat.st_ctime, tz=UTC).astimezone()
 
     candidate_dates = sorted((date_created, date_modified), key=lambda date: date.timestamp())
 
@@ -87,8 +90,9 @@ def get_image_date(path: Path):
             if isinstance(raw_date_taken, bytes):
                 raw_date_taken = raw_date_taken.decode("ascii")
             if raw_date_taken:
-                date_taken = datetime.strptime(raw_date_taken, "%Y:%m:%d %H:%M:%S")
+                date_taken = datetime.strptime(raw_date_taken, "%Y:%m:%d %H:%M:%S").astimezone()
     except Exception:
+        logger.exception("Could not read image metadata for %s", path)
         date_taken = None
     if date_taken and is_valid_date(date_taken):
         return date_taken
@@ -115,12 +119,13 @@ def get_video_date(path: Path):
 
         # hachoir returns naive datetimes in UTC for container timestamps.
         if media_date.tzinfo is None:
-            media_date = media_date.replace(tzinfo=timezone.utc)
+            media_date = media_date.replace(tzinfo=UTC)
         media_date = media_date.astimezone()
         if is_valid_date(media_date):
             return media_date
         return None
     except Exception:
+        logger.exception("Could not read video metadata for %s", path)
         return None
 
 
@@ -169,7 +174,7 @@ def write_video_date(path: Path, date_taken: datetime):
         temporary_path = Path(temporary_file.name)
 
     # Container creation timestamps are UTC, while stamped filenames use local time.
-    creation_time = date_taken.astimezone().astimezone(timezone.utc).isoformat(timespec="seconds")
+    creation_time = date_taken.astimezone().astimezone(UTC).isoformat(timespec="seconds")
     try:
         run(
             [
