@@ -84,6 +84,11 @@ def process(items: list[Item], count: int = 0, indent: int = 0, apply: bool = Fa
         print(" " * indent, end="")
         print(f"[{Fore.BLUE}#{count}{Fore.RESET}] ", end="")
         if item.is_dir:
+            if item.is_cycle:
+                print(
+                    f"{Fore.YELLOW}{item.name} (skipped cyclic directory link){Fore.RESET}"
+                )
+                continue
             print(f"{Fore.CYAN}{item.name}{Fore.RESET}")
             count = process(item.items, count=count, indent=indent + 2, apply=apply)
         else:
@@ -91,6 +96,13 @@ def process(items: list[Item], count: int = 0, indent: int = 0, apply: bool = Fa
                 print(
                     f"{Fore.YELLOW}{item.name}{Fore.RESET} -> {Fore.GREEN}{item.proposed_name}{Fore.RESET} "
                     f"and metadata date"
+                )
+            elif (
+                item.metadata_date_to_write is not None and not item.can_write_metadata
+            ):
+                print(
+                    f"{Fore.YELLOW}{item.name}{Fore.RESET} -> {Fore.GREEN}{item.proposed_name}{Fore.RESET} "
+                    "(metadata writing is unsupported)"
                 )
             elif item.proposed_name == item.name:
                 print(f"{Fore.GREEN}{item.name}{Fore.RESET}")
@@ -118,6 +130,11 @@ def process_metadata(
         print(" " * indent, end="")
         print(f"[{Fore.BLUE}#{count}{Fore.RESET}] ", end="")
         if item.is_dir:
+            if item.is_cycle:
+                print(
+                    f"{Fore.YELLOW}{item.name} (skipped cyclic directory link){Fore.RESET}"
+                )
+                continue
             print(f"{Fore.CYAN}{item.name}{Fore.RESET}")
             count = process_metadata(
                 item.items, count=count, indent=indent + 2, apply=apply

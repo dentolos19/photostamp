@@ -1,9 +1,10 @@
 import logging
 import sys
 import warnings
+import zlib
 from datetime import UTC, datetime
 from pathlib import Path
-from shutil import which
+from shutil import copystat, which
 from subprocess import CalledProcessError, run
 from tempfile import NamedTemporaryFile
 
@@ -45,6 +46,12 @@ def is_supported_media(path: Path):
 
 def can_write_metadata(path: Path):
     suffix = path.suffix.lower()
+    if suffix in {".tif", ".tiff"}:
+        try:
+            with Image.open(path) as image:
+                return getattr(image, "n_frames", 1) == 1
+        except OSError:
+            return False
     return suffix in WRITABLE_IMAGE_METADATA_EXTENSIONS or (
         suffix in VIDEO_EXTENSIONS and which("ffmpeg") is not None
     )
@@ -92,18 +99,20 @@ def get_image_date(path: Path):
     try:
         with Image.open(path) as image:
             exif = image.getexif()
-        if exif:
+            exif_ifd = exif.get_ifd(EXIF_IFD_TAG)
             raw_date_taken = (
-                exif.get(EXIF_DATETIME_ORIGINAL_TAG)
+                exif_ifd.get(EXIF_DATETIME_ORIGINAL_TAG)
+                or exif.get(EXIF_DATETIME_ORIGINAL_TAG)
+                or exif_ifd.get(EXIF_DATETIME_DIGITIZED_TAG)
                 or exif.get(EXIF_DATETIME_DIGITIZED_TAG)
                 or exif.get(EXIF_DATETIME_TAG)
             )
+        if raw_date_taken:
             if isinstance(raw_date_taken, bytes):
                 raw_date_taken = raw_date_taken.decode("ascii")
-            if raw_date_taken:
-                date_taken = datetime.strptime(
-                    raw_date_taken, "%Y:%m:%d %H:%M:%S"
-                ).astimezone()
+            date_taken = datetime.strptime(
+                raw_date_taken, "%Y:%m:%d %H:%M:%S"
+            ).astimezone()
     except Exception:
         logger.exception("Could not read image metadata for %s", path)
         date_taken = None
@@ -159,30 +168,96 @@ def get_media_date(path: Path):
 
 
 def write_image_date(path: Path, date_taken: datetime):
+    # Replace the target, rather than a symlink pointing to it.
+    suffix = path.suffix.lower()
+    path = path.resolve(strict=True)
     exif_date = date_taken.strftime("%Y:%m:%d %H:%M:%S")
+    with NamedTemporaryFile(
+        dir=path.parent, prefix=f".{path.stem}-", suffix=suffix, delete=False
+    ) as temporary_file:
+        temporary_path = Path(temporary_file.name)
 
-    if path.suffix.lower() in JPEG_EXTENSIONS:
-        encoded_exif_date = exif_date.encode("ascii")
-        exif = piexif.load(str(path))
-        exif["0th"][piexif.ImageIFD.DateTime] = encoded_exif_date
-        exif["Exif"][piexif.ExifIFD.DateTimeOriginal] = encoded_exif_date
-        exif["Exif"][piexif.ExifIFD.DateTimeDigitized] = encoded_exif_date
-        piexif.insert(piexif.dump(exif), str(path))
-        return
-
-    with Image.open(path) as image:
-        image.load()
-        exif = image.getexif()
-        exif[EXIF_DATETIME_TAG] = exif_date
-        exif_ifd = exif.get_ifd(EXIF_IFD_TAG)
-        exif_ifd[EXIF_DATETIME_ORIGINAL_TAG] = exif_date
-        exif_ifd[EXIF_DATETIME_DIGITIZED_TAG] = exif_date
-        image.save(path, exif=exif)
+    try:
+        if suffix in JPEG_EXTENSIONS:
+            encoded_exif_date = exif_date.encode("ascii")
+            exif = piexif.load(str(path))
+            exif["0th"][piexif.ImageIFD.DateTime] = encoded_exif_date
+            exif["Exif"][piexif.ExifIFD.DateTimeOriginal] = encoded_exif_date
+            exif["Exif"][piexif.ExifIFD.DateTimeDigitized] = encoded_exif_date
+            piexif.insert(piexif.dump(exif), str(path), str(temporary_path))
+        else:
+            with Image.open(path) as image:
+                if suffix in {".tif", ".tiff"} and getattr(image, "n_frames", 1) > 1:
+                    raise ValueError(
+                        f"Cannot safely write metadata to a multi-frame image: {path}"
+                    )
+                image.load()
+                exif = image.getexif()
+                exif[EXIF_DATETIME_TAG] = exif_date
+                exif_ifd = exif.get_ifd(EXIF_IFD_TAG)
+                exif_ifd[EXIF_DATETIME_ORIGINAL_TAG] = exif_date
+                exif_ifd[EXIF_DATETIME_DIGITIZED_TAG] = exif_date
+                if suffix == ".webp":
+                    # Inserting an EXIF chunk avoids recompressing lossy image data.
+                    with path.open("rb") as source:
+                        header = source.read(30)
+                    piexif.insert(exif.tobytes(), str(path), str(temporary_path))
+                    if header[12:20] == b"VP8X\x0a\x00\x00\x00":
+                        # piexif rebuilds VP8X from individual animation frames;
+                        # keep the original canvas and flags, adding only EXIF.
+                        with temporary_path.open("r+b") as output:
+                            output.seek(20)
+                            output.write(bytes([header[20] | 0x08]) + header[21:30])
+                elif suffix == ".png":
+                    # Copy every other chunk verbatim, including animation and
+                    # application-specific metadata, without recompressing pixels.
+                    exif_chunk = b"eXIf" + exif.tobytes()[6:]
+                    with path.open("rb") as source, temporary_path.open("wb") as output:
+                        signature = source.read(8)
+                        if signature != b"\x89PNG\r\n\x1a\n":
+                            raise ValueError(f"Not a PNG image: {path}")
+                        output.write(signature)
+                        written = False
+                        while True:
+                            header = source.read(8)
+                            if len(header) != 8:
+                                raise ValueError(f"Incomplete PNG image: {path}")
+                            length = int.from_bytes(header[:4], "big")
+                            chunk_type = header[4:]
+                            if chunk_type == b"IDAT" and not written:
+                                output.write((len(exif_chunk) - 4).to_bytes(4, "big"))
+                                output.write(exif_chunk)
+                                output.write(zlib.crc32(exif_chunk).to_bytes(4, "big"))
+                                written = True
+                            if chunk_type != b"eXIf":
+                                output.write(header)
+                            remaining = length + 4
+                            while remaining:
+                                chunk = source.read(min(remaining, 1024 * 1024))
+                                if not chunk:
+                                    raise ValueError(f"Incomplete PNG image: {path}")
+                                if chunk_type != b"eXIf":
+                                    output.write(chunk)
+                                remaining -= len(chunk)
+                            if chunk_type == b"IEND":
+                                if not written:
+                                    raise ValueError(f"PNG has no image data: {path}")
+                                while chunk := source.read(1024 * 1024):
+                                    output.write(chunk)
+                                break
+                else:
+                    image.save(temporary_path, exif=exif)
+        copystat(path, temporary_path)
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def write_video_date(path: Path, date_taken: datetime):
+    suffix = path.suffix
+    path = path.resolve(strict=True)
     with NamedTemporaryFile(
-        dir=path.parent, prefix=f".{path.stem}-", suffix=path.suffix, delete=False
+        dir=path.parent, prefix=f".{path.stem}-", suffix=suffix, delete=False
     ) as temporary_file:
         temporary_path = Path(temporary_file.name)
 
@@ -213,17 +288,19 @@ def write_video_date(path: Path, date_taken: datetime):
             capture_output=True,
             text=True,
         )
+        copystat(path, temporary_path)
         temporary_path.replace(path)
     except CalledProcessError as error:
-        temporary_path.unlink(missing_ok=True)
         raise ValueError(
             f"Could not write video metadata for {path}: {error.stderr.strip()}"
         ) from error
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def write_metadata_date(path: Path, date_taken: datetime):
     if not can_write_metadata(path):
-        raise ValueError(f"Cannot write metadata for unsupported file type: {path}")
+        raise ValueError(f"Cannot write metadata for unsupported media: {path}")
 
     if path.suffix.lower() in VIDEO_EXTENSIONS:
         write_video_date(path, date_taken)
