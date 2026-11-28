@@ -2,11 +2,26 @@
 
 Write documentation for the next agent or engineer. Keep each file short, factual, and current. Link to code instead of duplicating it.
 
+## Writing Style
+
+- Use American English.
+- Use Title Case for headings and short phrases, such as link text and table headers.
+- End full sentences with periods, including in bullets. Leave fragments, such as link lists and prerequisites, without periods.
+- Use bold sparingly for key terms, with punctuation outside the markers: `**Key Term**: Content`.
+
 ## Root Files
 
+- [`README.md`](../README.md): The public overview for humans. Links to the other root files instead of repeating them, and its Setup section is the canonical quick start.
 - [`AGENTS.md`](../AGENTS.md): The index. Holds general instructions, commands, and links to the other documents. Read first, so keep it brief.
+- [`PRODUCT.md`](../PRODUCT.md): What is being built and why. Covers the purpose, users, core features, and scope, including what is out of scope.
 
-## Docs Folder
+Use these exact top-level headings:
+
+- `AGENTS.md`: `# Agent Instructions`
+- `PRODUCT.md`: `# Product Specifications`
+- `docs/README.md`: `# Documentation Guidelines`
+
+## Documentation Folder
 
 ```text
 docs/
@@ -20,7 +35,7 @@ docs/
 ```
 
 - `decisions/`: Architecture decision records. One decision per file, numbered in order with kebab-case titles.
-- `guides/`: How-to documents for recurring tasks, such as setup, deployment, and runbooks.
+- `guides/`: How-to documents for recurring tasks, such as setup, deployment, and runbooks. Title each with a Title Case `#` heading, and do not repeat the README Setup steps.
 - `plans/`: Specs and plans for work in progress. Delete when the work lands; record any lasting choice as a decision.
 
 ## Decisions
@@ -50,6 +65,5 @@ Trade-offs and follow-up work.
 
 ## Rules
 
-- Put each document in one place only. Product goes in `PRODUCT.md`, design in `DESIGN.md`, decisions in `docs/decisions/`, how-tos in `docs/guides/`, and everything else is linked from `AGENTS.md`.
+- Put each document in one place only. Product goes in `PRODUCT.md`, decisions in `docs/decisions/`, how-tos in `docs/guides/`, and everything else is linked from `AGENTS.md`.
 - Update the relevant document in the same change as the code it describes.
-- Do not add other top-level documents or `docs/` folders without recording a decision.

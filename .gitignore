@@ -1,18 +1,12 @@
-*.egg-info/
-*.iml
 .DS_Store
 .env*
-.idea/
-.pytest_cache/
+.playwright-cli/
 .ruff_cache/
 .tmp/
 .venv/
-.vs/
 Desktop.ini
 Thumbs.db
 __pycache__/
-build/
-dist/
 
 !.env*.template
 !.gitkeep
